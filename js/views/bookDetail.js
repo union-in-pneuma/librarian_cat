@@ -1,13 +1,8 @@
 import { api } from '../backend.js';
 import { catSVG } from '../cat.js';
+import { INTERACTIONS, REACTION_MS, lineDuration, interactionButtons, talkLine, randomLine } from '../interactions.js';
 import { esc, safeUrl, $, $$, fmtDate, toast, avatar, progressBar, stageOf } from '../util.js';
 
-const INTERACTIONS = [
-  { at: 25, id: 'pet', icon: '🤲', label: '쓰다듬기', mood: 'happy', anim: 'purr', fx: '💕', lines: ['골골골…', '거기 좋다냥~', '조금만 더 쓰다듬어 줘'] },
-  { at: 50, id: 'treat', icon: '🐟', label: '간식 주기', mood: 'love', anim: 'eat', fx: '🐟', lines: ['냠냠! 최고다냥', '츄르는 사랑이야', '한 개 더…?'] },
-  { at: 75, id: 'play', icon: '🧶', label: '털실 놀이', mood: 'surprised', anim: 'jump', fx: '🧶', lines: ['잡았다냥!', '한 번 더!', '이번엔 안 놓쳐!'] },
-  { at: 100, id: 'talk', icon: '💬', label: '책 이야기', mood: 'happy', anim: 'nod', fx: '✨', lines: [] },
-];
 const NOTE_TYPES = { presentation: '발제', discussion: '토론 기록' };
 const STAGE_TEXT = [
   '쿨쿨 자는 중이에요. 25%까지 읽으면 깨어나요.',
@@ -105,26 +100,14 @@ export async function renderBookDetail(root, bookId) {
       fx.append(s);
       setTimeout(() => s.remove(), 1800);
     }
-    say(it.id === 'talk' ? talkLine() : it.lines[Math.floor(Math.random() * it.lines.length)], it.id === 'talk' ? 5000 : 2200);
-    setTimeout(() => { drawCat(); catEl.className = 'cat'; busy = false; }, 1600);
-  }
-
-  // 100% 보상: 이 책의 발제/토론 기록 중 한 구절을 고양이가 들려줌
-  function talkLine() {
-    const pool = notes.flatMap((n) => [n.title, ...String(n.content || '').split(/\n+/)]).map((s) => s.trim()).filter((s) => s.length > 4);
-    if (!pool.length) return `"${book.title}" 정말 재밌었다냥! 발제를 남겨주면 내가 기억해둘게.`;
-    const line = pool[Math.floor(Math.random() * pool.length)];
-    return `기억나냥? "${line.length > 70 ? line.slice(0, 70) + '…' : line}"`;
+    say(it.id === 'talk' ? talkLine(notes, book.title) : randomLine(it), lineDuration(it));
+    setTimeout(() => { drawCat(); catEl.className = 'cat'; busy = false; }, REACTION_MS);
   }
 
   function drawInteractions() {
     const stage = stageOf(myPct);
     $('#stage-text', root).textContent = STAGE_TEXT[stage];
-    $('#interactions', root).innerHTML = INTERACTIONS.map((it) => {
-      const open = myPct >= it.at;
-      return `<button class="btn interact ${open ? '' : 'locked'}" data-id="${it.id}" ${open ? '' : 'disabled'} title="${open ? '' : `${it.at}% 읽으면 열려요`}">
-        <span>${open ? it.icon : '🔒'}</span>${it.label}<small>${it.at}%</small></button>`;
-    }).join('');
+    $('#interactions', root).innerHTML = interactionButtons(myPct);
   }
 
   $('#interactions', root).addEventListener('click', (e) => {
