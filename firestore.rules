@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 로그인한 사람은 누구나 열람/작성 가능.
+    // 북클럽 멤버만 허용하려면 signedIn()을 아래처럼 바꾸세요:
+    //   request.auth != null && request.auth.token.email in ['a@gmail.com', 'b@gmail.com']
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isBookOwner(bookId) {
+      return get(/databases/$(database)/documents/books/$(bookId)).data.createdBy.uid == uid();
+    }
+
+    match /books/{bookId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.createdBy.uid == uid();
+      allow update: if signedIn() && resource.data.createdBy.uid == uid()
+                    && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if signedIn() && resource.data.createdBy.uid == uid();
+
+      // 독서 진도: 문서 id = 본인 uid
+      match /progress/{userId} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && userId == uid() && request.resource.data.uid == uid();
+        allow delete: if signedIn() && (userId == uid() || isBookOwner(bookId));
+      }
+
+      // 발제 / 토론 기록
+      match /notes/{noteId} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.resource.data.author.uid == uid();
+        allow update: if signedIn() && resource.data.author.uid == uid()
+                      && request.resource.data.author == resource.data.author;
+        allow delete: if signedIn() && (resource.data.author.uid == uid() || isBookOwner(bookId));
+
+        match /comments/{commentId} {
+          allow read: if signedIn();
+          allow create: if signedIn() && request.resource.data.author.uid == uid();
+          allow delete: if signedIn() && (resource.data.author.uid == uid()
+                        || get(/databases/$(database)/documents/books/$(bookId)/notes/$(noteId)).data.author.uid == uid()
+                        || isBookOwner(bookId));
+        }
+      }
+    }
+
+    // 마을 화면의 collectionGroup('progress') 조회용
+    match /{path=**}/progress/{userId} {
+      allow read: if signedIn();
+    }
+  }
+}

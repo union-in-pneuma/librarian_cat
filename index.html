@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Librarian Cat · 북클럽</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Jua&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="demo-banner">데모 모드 · 데이터가 이 브라우저에만 저장돼요 (js/firebase-config.js를 채우면 Google 로그인으로 전환)</div>
+  <header class="topbar">
+    <a class="logo" href="#/">🐈 Librarian Cat</a>
+    <nav class="nav" hidden>
+      <a href="#/">📚 서재</a>
+      <a href="#/village">🏡 고양이 마을</a>
+    </nav>
+    <div class="user" id="user"></div>
+  </header>
+  <main id="main"><div class="loading">🐾 불러오는 중…</div></main>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
