@@ -54,6 +54,7 @@ export class CatActor {
     this.dur = 0;
     this.speed = 0;
     this.walkPhase = 0;
+    this.lastMoveAt = -1e9;
     this.seed = Math.random() * 10;
     this.idleLeft = rnd(3000, 7000);
     this.blinkAt = rnd(800, 3000);
@@ -94,10 +95,14 @@ export class CatActor {
 
   /** 이동 여부를 매 프레임 알려줌. 움직이면 하던 일(잠·그루밍 등)을 멈추고 걷기 */
   setMotion(moving, speed = 1) {
-    this.speed = speed;
+    if (moving) {
+      this.speed = speed;
+      this.lastMoveAt = this.time;
+    }
     if (this.reacting) return;
     if (moving && this.state !== 'walk') this.setState('walk');
-    else if (!moving && this.state === 'walk') {
+    // 잠깐(0.5초 미만) 멈춘 건 걷는 자세 유지 → 앉기·걷기가 번갈아 깜빡이지 않음
+    else if (!moving && this.state === 'walk' && this.time - this.lastMoveAt > 500) {
       this.setState('sit');
       this.idleLeft = rnd(2500, 6000);
     }
@@ -111,7 +116,9 @@ export class CatActor {
   update(dt) {
     this.time += dt;
     const el = this.time - this.t0;
-    if (this.state === 'walk') this.walkPhase += (dt / 1000) * (5 + this.speed * 6);
+    // 걷는 자세로 잠깐 멈춰 있을 땐 다리를 멈춤
+    const stepping = this.time - this.lastMoveAt < 60;
+    if (this.state === 'walk' && stepping) this.walkPhase += (dt / 1000) * (5 + this.speed * 6);
     if ((REACTIONS.includes(this.state) || IDLE_ACTIONS.includes(this.state)) && el > this.dur) {
       this.setState('sit');
       this.idleLeft = rnd(3000, 8000);

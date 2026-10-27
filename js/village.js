@@ -85,7 +85,8 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
     const step = Math.min(dist, (dt / 1000) * speed);
     e.i += (dx / dist) * step;
     e.j += (dy / dist) * step;
-    e.flip = dx - dy < 0; // 화면 왼쪽으로 이동하면 좌우 반전
+    // 화면 왼쪽으로 이동하면 좌우 반전. 거의 세로로만 움직일 땐 방향을 유지해 깜빡임 방지
+    if (Math.abs(dx - dy) > 0.15 * dist) e.flip = dx - dy < 0;
   }
 
   function updateButler(b, dt) {
@@ -141,9 +142,13 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
     const p = trail[Math.max(0, idx)];
     const tx = p.i + c.offset.i, ty = p.j + c.offset.j;
     const dist = Math.hypot(tx - c.i, ty - c.j);
-    if (dist < 0.08) return;
+    // 멈춰 있을 땐 0.35타일 이상 벌어져야 출발하고, 걷는 중엔 0.06타일까지 다가가야 멈춤
+    // (같은 문턱값을 쓰면 매 프레임 섰다·걸었다를 반복해 떨려 보임)
+    if (c.following ? dist < 0.06 : dist < 0.35) { c.following = false; return; }
+    c.following = true;
     c.moving = true;
-    c.speed = Math.max(1, dist * 1.8);
+    // 집사 걸음(0.8)과 비슷하게 맞추되, 멀리 떨어졌으면 서둘러 따라감
+    c.speed = Math.min(2.4, Math.max(0.7, dist * 1.4));
     stepToward(c, tx, ty, c.speed, dt);
   }
 
