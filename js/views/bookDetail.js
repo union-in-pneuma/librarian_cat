@@ -7,11 +7,11 @@ import { esc, safeUrl, $, $$, fmtDate, toast, avatar, progressBar, stageOf } fro
 const NOTE_TYPES = { presentation: '발제', discussion: '토론 기록' };
 // 고양이 상태는 가장 많이 읽은 사람 기준 (모두에게 같게 보임)
 const STAGE_TEXT = [
-  '아직 아무도 25%를 넘기지 않아 쿨쿨 자고 있어요.',
-  '눈을 떴어요! 누군가 읽기 시작했나 봐요.',
-  '절반을 넘겼어요. 아기 고양이로 마을에 놀러 가요.',
-  '75%! 마을에서 신나게 뛰어놀아요.',
-  '완독! 왕관을 쓰고 마을에서 지내요 👑',
+  '꾸벅꾸벅 졸고 있어요. 누군가 읽기 시작하면 깨어나요.',
+  '눈을 떴어요! 가장 많이 읽은 집사를 따라다녀요.',
+  '절반을 넘겼어요. 신이 나서 꼬리를 흔들어요.',
+  '75%! 결말이 궁금해서 안절부절못해요.',
+  '완독! 왕관을 썼어요 👑',
 ];
 
 export async function renderBookDetail(root, bookId) {
@@ -111,21 +111,17 @@ export async function renderBookDetail(root, bookId) {
   function drawInteractions() {
     const st = status();
     $('#stage-text', root).textContent = STAGE_TEXT[stageOf(st.best)];
-    const opened = INTERACTIONS.filter((it) => myPct >= it.at).length;
-    $('#owner-text', root).innerHTML = `${st.owner
-      ? `🧑 <b>${esc(st.owner.name)}</b> 집사를 따라다녀요${st.tied.length > 1 ? ` <span class="muted">(동점 ${st.tied.length}명 중 오늘의 집사)</span>` : ''}<br>`
-      : ''}<span class="muted">내 진도 ${Math.round(myPct)}% · 놀이 ${opened}개 열림</span>`;
-    $('#interactions', root).innerHTML = interactionButtons(myPct);
+    $('#owner-text', root).innerHTML = st.owner
+      ? `🧑 <b>${esc(st.owner.name)}</b> 집사를 따라다녀요${st.tied.length > 1 ? ` <span class="muted">(동점 ${st.tied.length}명 중 오늘의 집사)</span>` : ''}`
+      : '<span class="muted">아직 읽는 집사가 없어 마을을 자유롭게 돌아다녀요</span>';
+    $('#interactions', root).innerHTML = interactionButtons();
   }
 
   $('#interactions', root).addEventListener('click', (e) => {
     const btn = e.target.closest('[data-id]');
     if (btn) interact(INTERACTIONS.find((it) => it.id === btn.dataset.id));
   });
-  catEl.addEventListener('click', () => {
-    if (myPct >= 25) interact(INTERACTIONS[0]);
-    else say(status().best < 25 ? '쿨쿨… (아직 깊이 잠들어 있어요)' : '아직 낯을 가려요… 25%까지 읽으면 친해질 수 있어요');
-  });
+  catEl.addEventListener('click', () => interact(INTERACTIONS[0]));
 
   // ---------- 진도 ----------
   const pform = $('#progress-form', root);
@@ -143,16 +139,15 @@ export async function renderBookDetail(root, bookId) {
   pform.addEventListener('submit', async (e) => {
     e.preventDefault();
     const percent = Number(range.value);
-    const before = stageOf(myPct);
+    const wasOwner = status().owner?.uid === me.uid;
     await api.setProgress(bookId, { percent, page: pageInput ? Number(pageInput.value) : null });
+    const finishedNow = percent >= 100 && myPct < 100;
     myPct = percent;
     progress = await api.listProgress(bookId);
-    const after = stageOf(myPct);
-    if (after > before) {
-      const unlocked = INTERACTIONS[after - 1];
-      toast(after === 4 ? '🎉 완독! 고양이가 마을로 이사했어요' : `${unlocked.icon} "${unlocked.label}"이(가) 열렸어요!`);
-      setTimeout(() => interact(unlocked), 300);
-    } else toast('진도를 기록했어요');
+    const nowOwner = status().owner?.uid === me.uid;
+    if (finishedNow) toast('🎉 완독!');
+    else if (nowOwner && !wasOwner) toast(`🐾 ${book.cat?.name || '고양이'}이(가) 이제 나를 따라다녀요!`);
+    else toast('진도를 기록했어요');
     drawCat();
     drawInteractions();
     drawReaders();

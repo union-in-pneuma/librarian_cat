@@ -2,10 +2,11 @@ import { api } from '../backend.js';
 import { createVillage } from '../village.js';
 import { THEMES, unlocksFor } from '../villageThemes.js';
 import { catSVG } from '../cat.js';
-import { butlerSVG, randomLook, SKINS, HAIR_COLORS, HAIR_STYLES, OUTFITS } from '../butler.js';
+import { butlerSVG, randomLook } from '../butler.js';
+import { openButlerEditor } from './butlerEditor.js';
 import { bookStatus, hash } from '../owners.js';
 import { INTERACTIONS, REACTION_MS, lineDuration, interactionButtons, talkLine, randomLine } from '../interactions.js';
-import { esc, $, toast } from '../util.js';
+import { esc, $ } from '../util.js';
 
 // 테마 선택은 보는 사람 브라우저에만 기억
 const THEME_KEY = 'librarian-cat-village-theme';
@@ -17,44 +18,50 @@ export async function renderVillage(root) {
   const uid = api.me().uid;
   const byId = Object.fromEntries(books.map((b) => [b.id, b]));
   const liveProgress = progress.filter((p) => byId[p.bookId]);
-  const myPct = Object.fromEntries(liveProgress.filter((p) => p.uid === uid).map((p) => [p.bookId, p.percent]));
+  const newCatId = new URLSearchParams(location.hash.split('?')[1]).get('new');
 
   // 집사 목록: 등록된 집사 + (집사 문서가 없는) 진도 기록자
   const butlers = new Map(users.map((u) => [u.uid, { uid: u.uid, name: u.name, look: u.look || randomLook(hash(u.uid)) }]));
   for (const p of liveProgress) if (!butlers.has(p.uid)) butlers.set(p.uid, { uid: p.uid, name: p.name, look: randomLook(hash(p.uid)) });
   for (const b of butlers.values()) b.isMe = b.uid === uid;
 
-  const residents = books.map((b) => ({ b, st: bookStatus(b.id, liveProgress) }))
-    .filter(({ st }) => st.best >= 50)
-    .map(({ b, st }) => ({
+  // 모든 책의 고양이가 마을에 삽니다. 읽은 집사가 있으면 가장 많이 읽은 집사를 따라다님
+  const residents = books.map((b) => {
+    const st = bookStatus(b.id, liveProgress);
+    return {
       bookId: b.id, cat: b.cat, percent: st.best, title: b.title,
       name: b.cat?.name || '고양이', label: `${b.cat?.name || '고양이'} · ${b.title}`,
-      ownerUid: st.owner.uid, ownerName: butlers.get(st.owner.uid)?.name || st.owner.name, tiedCount: st.tied.length,
-    }));
+      ownerUid: st.owner?.uid || null,
+      ownerName: st.owner ? butlers.get(st.owner.uid)?.name || st.owner.name : null,
+      tiedCount: st.tied.length,
+    };
+  });
   const adults = residents.filter((r) => r.percent >= 100);
-  const kittens = residents.filter((r) => r.percent < 100);
   const next = unlocksFor(theme).find((u) => u.at > adults.length);
 
   root.innerHTML = `
     <section class="page-head">
       <div>
         <h1>고양이 마을</h1>
-        <p class="muted">책을 50% 읽으면 아기 고양이가, 다 읽으면 왕관 쓴 고양이가 이사와요. 고양이는 자기 책을 가장 많이 읽은 집사를 따라다녀요.</p>
+        <p class="muted">책 한 권마다 고양이 한 마리가 살아요. 고양이는 자기 책을 가장 많이 읽은 집사를 따라다니고, 다 읽으면 왕관을 써요.</p>
       </div>
-      <button class="btn" id="my-butler">🧑 내 집사</button>
+      <div class="row">
+        <button class="btn" id="my-butler">🧑 내 집사 꾸미기</button>
+        <a class="btn primary" href="#/new?from=village">＋ 고양이 데려오기</a>
+      </div>
     </section>
     <div class="theme-picker" role="group" aria-label="마을 테마">
       ${Object.entries(THEMES).map(([id, t]) => `<button class="${id === theme ? 'active' : ''}" data-theme="${id}">${t.label}</button>`).join('')}
     </div>
     <div class="village-stats">
       <div class="stat"><b>${butlers.size}</b><span>집사</span></div>
+      <div class="stat"><b>${residents.length}</b><span>고양이</span></div>
       <div class="stat"><b>${adults.length}</b><span>완독 고양이</span></div>
-      <div class="stat"><b>${kittens.length}</b><span>아기 고양이</span></div>
       <div class="stat wide"><span>${next ? `🔓 ${next.at - adults.length}권 더 완독하면 <b>${next.label}</b>이(가) 생겨요` : '🏆 모든 건물을 해금했어요!'}</span></div>
     </div>
     <div class="village-wrap theme-${theme} ${isNight() ? 'night' : ''}">
       <canvas id="village"></canvas>
-      ${residents.length ? '' : '<div class="village-empty">아직 고양이가 없어요… 책을 절반 넘게 읽으면 첫 고양이가 찾아와요 🐾</div>'}
+      ${residents.length ? '' : '<div class="village-empty">아직 고양이가 없어요… ‘고양이 데려오기’로 첫 고양이를 데려와 보세요 🐾</div>'}
       <aside class="village-panel card" id="vpanel" hidden></aside>
     </div>
     <h2>마을 주민</h2>
@@ -62,7 +69,7 @@ export async function renderVillage(root) {
       <button class="resident" data-book="${r.bookId}">
         <div class="mini-cat">${catSVG(r.cat, { crown: r.percent >= 100 })}</div>
         <div><strong>${esc(r.name)}</strong><p class="tiny muted">${esc(r.title)}</p>
-        <p class="tiny">${r.percent >= 100 ? '👑 완독 고양이' : `🍼 아기 고양이 (${Math.round(r.percent)}%)`} · 🧑 ${esc(r.ownerName)}</p></div>
+        <p class="tiny">${r.percent >= 100 ? '👑 완독 · ' : ''}${r.ownerName ? `🧑 ${esc(r.ownerName)} (${Math.round(r.percent)}%)` : '🐾 자유롭게 산책 중'}</p></div>
       </button>`).join('')}</div>`;
 
   root.querySelectorAll('[data-theme]').forEach((b) => b.addEventListener('click', () => {
@@ -70,6 +77,7 @@ export async function renderVillage(root) {
     try { localStorage.setItem(THEME_KEY, theme); } catch { /* 저장 불가해도 이번 화면에는 적용 */ }
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   }));
+
 
   const panel = $('#vpanel', root);
   const notesCache = {};
@@ -91,8 +99,6 @@ export async function renderVillage(root) {
     current = r;
     busy = false;
     village.select('cat', r.bookId);
-    const pct = myPct[r.bookId] || 0;
-    const opened = INTERACTIONS.filter((it) => pct >= it.at).length;
     panel.innerHTML = `
       <button class="btn small ghost vp-close" aria-label="닫기">✕</button>
       <div class="vp-head">
@@ -100,11 +106,12 @@ export async function renderVillage(root) {
         <div>
           <strong>${esc(r.name)}</strong>
           <p class="tiny muted">${esc(r.title)}</p>
-          <p class="tiny">🧑 ${esc(r.ownerName)} 집사를 따라다녀요${r.tiedCount > 1 ? ` <span class="muted">(동점 ${r.tiedCount}명 중 오늘의 집사)</span>` : ''}</p>
+          <p class="tiny">${r.ownerName
+            ? `🧑 ${esc(r.ownerName)} 집사를 따라다녀요${r.tiedCount > 1 ? ` <span class="muted">(동점 ${r.tiedCount}명 중 오늘의 집사)</span>` : ''}`
+            : '🐾 아직 읽는 집사가 없어 자유롭게 산책 중'}</p>
         </div>
       </div>
-      <p class="tiny muted">내 진도 ${Math.round(pct)}% · ${opened ? `${opened}가지 놀이가 열려 있어요.` : '이 책을 25% 읽으면 쓰다듬어 줄 수 있어요.'}</p>
-      <div class="interactions">${interactionButtons(pct)}</div>
+      <div class="interactions">${interactionButtons()}</div>
       <a class="btn small" href="#/book/${r.bookId}">📖 책 페이지로 가기</a>`;
     panel.hidden = false;
   }
@@ -152,42 +159,8 @@ export async function renderVillage(root) {
       ${following.length
         ? `<div class="vp-following">${following.map((r) => `<button class="vp-mini" data-book="${r.bookId}" title="${esc(r.label)}">${catSVG(r.cat, { crown: r.percent >= 100 })}<span>${esc(r.name)}</span></button>`).join('')}</div>`
         : '<p class="tiny muted">아직 따라다니는 고양이가 없어요. 책을 가장 많이 읽으면 고양이가 따라와요!</p>'}
-      ${b.isMe ? butlerEditor(b) : ''}`;
+      ${b.isMe ? '<button class="btn small primary" id="vp-edit">✏️ 꾸미기</button>' : ''}`;
     panel.hidden = false;
-    if (b.isMe) bindEditor(b);
-  }
-
-  const swatches = (name, items, cur, render) => `<div class="swatches">${items.map((it) => `
-    <label class="swatch" title="${esc(it.label)}"><input type="radio" name="${name}" value="${it.id}" ${it.id === cur ? 'checked' : ''}>${render(it)}</label>`).join('')}</div>`;
-  const dot = (it) => `<span class="dot" style="background:${it.color}"></span>`;
-
-  function butlerEditor(b) {
-    return `<form id="butler-form" class="butler-form">
-      <label>집사 이름<input name="name" value="${esc(b.name)}" maxlength="20" required></label>
-      <fieldset><legend>피부</legend>${swatches('skin', SKINS, b.look.skin, dot)}</fieldset>
-      <fieldset><legend>머리색</legend>${swatches('hairColor', HAIR_COLORS, b.look.hairColor, dot)}</fieldset>
-      <fieldset><legend>머리 모양</legend>${swatches('hairStyle', HAIR_STYLES, b.look.hairStyle, (it) => `<span class="chip">${it.label}</span>`)}</fieldset>
-      <fieldset><legend>옷</legend>${swatches('outfit', OUTFITS, b.look.outfit, dot)}</fieldset>
-      <button class="btn primary small">저장</button>
-    </form>`;
-  }
-
-  function bindEditor(b) {
-    const form = $('#butler-form', panel);
-    const read = () => {
-      const fd = new FormData(form);
-      return { name: fd.get('name').trim(), look: Object.fromEntries(['skin', 'hairColor', 'hairStyle', 'outfit'].map((k) => [k, fd.get(k)])) };
-    };
-    form.addEventListener('input', () => { $('#vp-butler', panel).innerHTML = butlerSVG(read().look); });
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = read();
-      if (!data.name) return;
-      await api.ensureButler(b.look); // 집사 문서가 아직 없을 때를 대비
-      await api.updateButler(data);
-      toast('집사를 꾸몄어요!');
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    });
   }
 
   function closePanel() {
@@ -198,16 +171,26 @@ export async function renderVillage(root) {
 
   panel.addEventListener('click', (e) => {
     if (e.target.closest('.vp-close')) return closePanel();
+    if (e.target.closest('#vp-edit')) return editButler();
     const mini = e.target.closest('.vp-mini');
     if (mini) return openCat(residents.find((r) => r.bookId === mini.dataset.book));
     const btn = e.target.closest('[data-id]');
     if (btn) interact(INTERACTIONS.find((it) => it.id === btn.dataset.id));
   });
 
-  $('#my-butler', root).addEventListener('click', () => {
-    openButler(uid);
-    root.querySelector('.village-wrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
+  const rerender = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
+  const editButler = () => openButlerEditor({ onSaved: rerender });
+  $('#my-butler', root).addEventListener('click', editButler);
+
+  // 방금 데려온 고양이: 마을 한가운데로 불러 인사
+  const fresh = newCatId && residents.find((r) => r.bookId === newCatId);
+  if (fresh) {
+    history.replaceState(null, '', '#/village');
+    village.focus(fresh.bookId);
+    openCat(fresh);
+    setTimeout(() => village.react(fresh.bookId, INTERACTIONS[0], `안녕! 나는 ${fresh.name}. 오늘부터 이 마을에 살아요!`, 4000), 400);
+    root.querySelector('.village-wrap').scrollIntoView({ block: 'center' });
+  }
 
   // 주민 목록에서 고르면 마을에서 해당 고양이 선택
   root.querySelector('.resident-list').addEventListener('click', (e) => {

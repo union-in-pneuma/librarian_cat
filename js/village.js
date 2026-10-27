@@ -1,5 +1,6 @@
 // 2.5D 아이소메트릭 고양이 마을 (Canvas 2D)
 // 집사들은 마을을 돌아다니고, 고양이는 자기 책을 가장 많이 읽은 집사의 발자취를 따라다닙니다.
+// 아직 읽은 집사가 없는 고양이는 혼자 자유롭게 돌아다닙니다.
 import { catImage } from './cat.js';
 import { butlerImage } from './butler.js';
 import { REACTION_MS } from './interactions.js';
@@ -13,7 +14,7 @@ const FOLLOW_GAP = 11; // 고양이 사이 간격(발자취 점 개수) ≈ 0.55
  * @param {HTMLCanvasElement} canvas
  * @param {object} opts
  * @param {Array<{uid, name, look, isMe}>} opts.butlers
- * @param {Array<{bookId, cat, percent, label, ownerUid}>} opts.residents
+ * @param {Array<{bookId, cat, percent, label, ownerUid?}>} opts.residents
  * @param {string} opts.theme
  * @param {number} opts.finishedCount
  * @param {(entity: object|null) => void} opts.onSelect 고양이/집사 클릭 (빈 곳이면 null)
@@ -45,15 +46,15 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
   const byUid = Object.fromEntries(people.map((p) => [p.uid, p]));
 
   const followCount = {};
-  const cats = residents.filter((r) => byUid[r.ownerUid]).map((r) => {
-    const owner = byUid[r.ownerUid];
-    const order = (followCount[r.ownerUid] = (followCount[r.ownerUid] ?? -1) + 1);
-    const adult = r.percent >= 100;
-    const img = catImage(r.cat, { crown: adult, mood: adult ? 'normal' : 'happy' });
-    const size = adult ? 46 : 32;
+  const cats = residents.map((r) => {
+    const owner = byUid[r.ownerUid] || null;
+    const order = owner ? (followCount[r.ownerUid] = (followCount[r.ownerUid] ?? -1) + 1) : 0;
+    const crown = r.percent >= 100;
+    const img = catImage(r.cat, { crown, mood: 'normal' });
+    const [si, sj] = owner ? [owner.i + 0.3 * (order + 1), owner.j + 0.2] : randTile().map((v) => v + 0.5);
     return {
-      ...r, kind: 'cat', owner, order, adult, img, baseImg: img, w: size, h: size,
-      i: owner.i + 0.3 * (order + 1), j: owner.j + 0.2, flip: false, phase: Math.random() * 6, moving: false,
+      ...r, kind: 'cat', owner, order, crown, img, baseImg: img, w: 42, h: 42,
+      i: si, j: sj, tx: si, ty: sj, wait: Math.random() * 3000, flip: false, phase: Math.random() * 6, moving: false,
       offset: { i: ((order % 3) - 1) * 0.18, j: (order % 2 ? 0.15 : -0.15) },
       fx: [], anim: null, bubble: null, timer: 0, pauseUntil: 0,
     };
@@ -113,9 +114,28 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
     }
   }
 
+  // 주인 없는 고양이: 목적지를 골라 천천히 산책
+  function wanderCat(c, dt) {
+    const dist = Math.hypot(c.tx - c.i, c.ty - c.j);
+    if (dist < 0.05) {
+      c.wait -= dt;
+      if (c.wait <= 0) {
+        const [i, j] = randTile();
+        c.tx = i + 0.5; c.ty = j + 0.5;
+        c.wait = 2500 + Math.random() * 5000;
+      }
+      return;
+    }
+    const pi = c.i, pj = c.j;
+    stepToward(c, c.tx, c.ty, 0.6, dt);
+    if (!walkable(Math.floor(c.i), Math.floor(c.j))) { c.i = pi; c.j = pj; c.tx = pi; c.ty = pj; return; }
+    c.moving = true;
+  }
+
   function updateCat(c, dt, now) {
     c.moving = false;
     if (now < c.pauseUntil) return;
+    if (!c.owner) return wanderCat(c, dt);
     const trail = c.owner.trail;
     const idx = trail.length - 1 - (c.order + 1) * FOLLOW_GAP;
     const p = trail[Math.max(0, idx)];
@@ -332,13 +352,27 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
       selected = kind === 'cat' ? catOf(id) : kind === 'butler' ? byUid[id] || null : null;
     },
 
+    /** 새로 온 고양이를 마을 한가운데(도서관 앞)로 데려와 선택 */
+    focus(bookId) {
+      const c = catOf(bookId);
+      if (!c) return;
+      const [i, j] = freeTiles.reduce((a, b) =>
+        Math.hypot(a[0] - 7, a[1] - 9) <= Math.hypot(b[0] - 7, b[1] - 9) ? a : b);
+      const target = c.owner || c;
+      target.i = target.tx = i + 0.5;
+      target.j = target.ty = j + 0.5;
+      if (c.owner) { c.owner.trail = [{ i: c.owner.i, j: c.owner.j }]; c.owner.wait = 6000; }
+      else c.wait = 6000;
+      selected = c;
+    },
+
     /** 상호작용: 멈춰 서서 표정·동작·이펙트·말풍선으로 반응 */
     react(bookId, it, text, ms) {
       const c = catOf(bookId);
       if (!c) return;
       const now = performance.now();
       c.pauseUntil = now + ms;
-      c.img = catImage(c.cat, { crown: c.adult, mood: it.mood });
+      c.img = catImage(c.cat, { crown: c.crown, mood: it.mood });
       c.anim = { type: it.anim, t0: now };
       c.bubble = { text, until: now + ms };
       for (let k = 0; k < 5; k++) c.fx.push({ ch: it.fx, t0: now + k * 120, dx: (Math.random() - 0.5) * c.w });

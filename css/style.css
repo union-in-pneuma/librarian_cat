@@ -272,3 +272,25 @@ legend { font-size: .92rem; margin-bottom: 6px; }
   .readers li { grid-template-columns: auto 80px 1fr 40px; }
   .village-panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 60%; }
 }
+
+/* ---------- 모달 / 집사 꾸미기 ---------- */
+.modal {
+  border: 0; border-radius: var(--radius); padding: 0; width: min(640px, calc(100vw - 32px));
+  background: var(--card); color: var(--ink); box-shadow: 0 20px 60px rgba(60, 40, 30, .3);
+}
+.modal::backdrop { background: rgba(60, 40, 30, .35); backdrop-filter: blur(2px); }
+.modal[open] { animation: pop-in .2s ease-out; }
+@keyframes pop-in { from { opacity: 0; transform: scale(.96); } }
+.butler-editor { padding: 18px 20px; display: grid; gap: 12px; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; }
+.modal-head h2 { margin: 0; }
+.butler-editor-body { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 18px; }
+.butler-preview { display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: linear-gradient(#FFF1DE, #FBE3C8); border-radius: 12px; padding: 14px 8px; align-self: start; }
+.butler-preview #be-preview svg { width: 120px; height: 168px; }
+.header-butler { cursor: pointer; background: none; border: 0; font: inherit; color: inherit; display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 999px; }
+.header-butler:hover { background: var(--accent-soft); }
+@media (max-width: 560px) {
+  .butler-editor-body { grid-template-columns: 1fr; }
+  .butler-preview #be-preview svg { width: 90px; height: 126px; }
+}

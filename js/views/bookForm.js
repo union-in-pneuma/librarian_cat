@@ -27,9 +27,10 @@ export async function renderBookForm(root, bookId) {
     return;
   }
   const cat = { ...DEFAULT_CAT, ...(book?.cat || randomCat()) };
+  const fromVillage = new URLSearchParams(location.hash.split('?')[1]).get('from') === 'village';
 
   root.innerHTML = `
-    <section class="page-head"><h1>${book ? '책 정보 수정' : '새 책과 고양이 데려오기'}</h1></section>
+    <section class="page-head"><h1>${book ? '책 정보 수정' : fromVillage ? '마을에 새 고양이 데려오기' : '새 책과 고양이 데려오기'}</h1></section>
     ${book ? '' : `
     <div class="card lookup">
       <label>책 검색으로 자동 채우기 <span class="muted tiny">(${SEARCH_SOURCE})</span></label>
@@ -59,8 +60,8 @@ export async function renderBookForm(root, bookId) {
         <button class="btn" type="button" id="random">🎲 랜덤 고양이</button>
       </div>
       <div class="form-actions">
-        <a class="btn" href="${book ? `#/book/${book.id}` : '#/'}">취소</a>
-        <button class="btn primary" type="submit">${book ? '저장' : '서재에 추가'}</button>
+        <a class="btn" href="${book ? `#/book/${book.id}` : fromVillage ? '#/village' : '#/'}">취소</a>
+        <button class="btn primary" type="submit">${book ? '저장' : fromVillage ? '마을로 데려가기' : '서재에 추가'}</button>
       </div>
     </form>`;
 
@@ -94,7 +95,11 @@ export async function renderBookForm(root, bookId) {
     btn.disabled = true;
     try {
       if (book) { await api.updateBook(book.id, data); location.hash = `#/book/${book.id}`; }
-      else { const id = await api.createBook(data); toast(`${data.cat.name}(이)가 서재에 들어왔어요!`); location.hash = `#/book/${id}`; }
+      else {
+        const id = await api.createBook(data);
+        toast(`${data.cat.name}(이)가 ${fromVillage ? '마을에 왔어요!' : '서재에 들어왔어요!'}`);
+        location.hash = fromVillage ? `#/village?new=${id}` : `#/book/${id}`;
+      }
     } catch (err) {
       console.error(err);
       toast('저장하지 못했어요: ' + err.message);

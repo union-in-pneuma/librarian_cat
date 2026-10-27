@@ -6,6 +6,7 @@ import { renderLibrary } from './views/library.js';
 import { renderBookForm } from './views/bookForm.js';
 import { renderBookDetail } from './views/bookDetail.js';
 import { renderVillage } from './views/villageView.js';
+import { openButlerEditor } from './views/butlerEditor.js';
 
 const ROUTES = [
   [/^#?\/?$/, (root) => renderLibrary(root)],
@@ -29,7 +30,7 @@ async function route() {
     a.classList.toggle('active', a.getAttribute('href') === (hash.startsWith('#/village') ? '#/village' : '#/')));
   main.innerHTML = '<div class="loading">🐾 불러오는 중…</div>';
   for (const [re, view] of ROUTES) {
-    const m = hash.match(re);
+    const m = hash.split('?')[0].match(re); // ?뒤 쿼리는 각 화면이 직접 읽음
     if (!m) continue;
     try {
       const c = await view(main, ...m.slice(1).map(decodeURIComponent));
@@ -46,9 +47,11 @@ async function route() {
 
 function renderHeader(user) {
   $('#user').innerHTML = user
-    ? `${avatar(user, 30)}<span class="uname">${esc(user.name)}</span><button class="btn small ghost" id="logout">로그아웃</button>`
+    ? `<button class="header-butler" id="edit-butler" title="내 집사 꾸미기">${avatar(user, 30)}<span class="uname">${esc(user.name)}</span></button>
+       <button class="btn small ghost" id="logout">로그아웃</button>`
     : '';
   $('#logout')?.addEventListener('click', () => api.signOut());
+  $('#edit-butler')?.addEventListener('click', () => openButlerEditor({ onSaved: route }));
   $('.nav').hidden = !user;
 }
 
