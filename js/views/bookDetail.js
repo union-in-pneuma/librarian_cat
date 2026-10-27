@@ -1,15 +1,17 @@
 import { api } from '../backend.js';
 import { catSVG } from '../cat.js';
+import { bookStatus } from '../owners.js';
 import { INTERACTIONS, REACTION_MS, lineDuration, interactionButtons, talkLine, randomLine } from '../interactions.js';
 import { esc, safeUrl, $, $$, fmtDate, toast, avatar, progressBar, stageOf } from '../util.js';
 
 const NOTE_TYPES = { presentation: '발제', discussion: '토론 기록' };
+// 고양이 상태는 가장 많이 읽은 사람 기준 (모두에게 같게 보임)
 const STAGE_TEXT = [
-  '쿨쿨 자는 중이에요. 25%까지 읽으면 깨어나요.',
-  '눈을 떴어요! 쓰다듬어 줄 수 있어요.',
-  '배가 고픈가 봐요. 간식을 줄 수 있어요.',
-  '놀고 싶어해요. 털실 놀이가 열렸어요.',
-  '다 읽었어요! 왕관을 쓰고 고양이 마을로 이사했어요 👑',
+  '아직 아무도 25%를 넘기지 않아 쿨쿨 자고 있어요.',
+  '눈을 떴어요! 누군가 읽기 시작했나 봐요.',
+  '절반을 넘겼어요. 아기 고양이로 마을에 놀러 가요.',
+  '75%! 마을에서 신나게 뛰어놀아요.',
+  '완독! 왕관을 쓰고 마을에서 지내요 👑',
 ];
 
 export async function renderBookDetail(root, bookId) {
@@ -34,6 +36,7 @@ export async function renderBookDetail(root, bookId) {
         </div>
         <p class="cat-title">🐾 ${esc(book.cat?.name || '이름 없는 고양이')}</p>
         <p class="muted center" id="stage-text"></p>
+        <p class="tiny center" id="owner-text"></p>
         <div class="interactions" id="interactions"></div>
       </div>
       <div class="card book-info">
@@ -76,8 +79,9 @@ export async function renderBookDetail(root, bookId) {
   const catEl = $('#cat', root);
   const bubble = $('#bubble', root);
   let busy = false;
-  const baseMood = () => (stageOf(myPct) === 0 ? 'sleepy' : 'normal');
-  const drawCat = (mood = baseMood()) => { catEl.innerHTML = catSVG(book.cat, { mood, crown: myPct >= 100 }); };
+  const status = () => bookStatus(bookId, progress);
+  const baseMood = () => (stageOf(status().best) === 0 ? 'sleepy' : 'normal');
+  const drawCat = (mood = baseMood()) => { catEl.innerHTML = catSVG(book.cat, { mood, crown: status().best >= 100 }); };
 
   function say(text, ms = 2200) {
     bubble.textContent = text;
@@ -105,8 +109,12 @@ export async function renderBookDetail(root, bookId) {
   }
 
   function drawInteractions() {
-    const stage = stageOf(myPct);
-    $('#stage-text', root).textContent = STAGE_TEXT[stage];
+    const st = status();
+    $('#stage-text', root).textContent = STAGE_TEXT[stageOf(st.best)];
+    const opened = INTERACTIONS.filter((it) => myPct >= it.at).length;
+    $('#owner-text', root).innerHTML = `${st.owner
+      ? `🧑 <b>${esc(st.owner.name)}</b> 집사를 따라다녀요${st.tied.length > 1 ? ` <span class="muted">(동점 ${st.tied.length}명 중 오늘의 집사)</span>` : ''}<br>`
+      : ''}<span class="muted">내 진도 ${Math.round(myPct)}% · 놀이 ${opened}개 열림</span>`;
     $('#interactions', root).innerHTML = interactionButtons(myPct);
   }
 
@@ -116,7 +124,7 @@ export async function renderBookDetail(root, bookId) {
   });
   catEl.addEventListener('click', () => {
     if (myPct >= 25) interact(INTERACTIONS[0]);
-    else say('쿨쿨… (아직 깊이 잠들어 있어요)');
+    else say(status().best < 25 ? '쿨쿨… (아직 깊이 잠들어 있어요)' : '아직 낯을 가려요… 25%까지 읽으면 친해질 수 있어요');
   });
 
   // ---------- 진도 ----------

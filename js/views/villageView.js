@@ -2,10 +2,10 @@ import { api } from '../backend.js';
 import { createVillage } from '../village.js';
 import { THEMES, unlocksFor } from '../villageThemes.js';
 import { catSVG } from '../cat.js';
+import { butlerSVG, randomLook, SKINS, HAIR_COLORS, HAIR_STYLES, OUTFITS } from '../butler.js';
+import { bookStatus, hash } from '../owners.js';
 import { INTERACTIONS, REACTION_MS, lineDuration, interactionButtons, talkLine, randomLine } from '../interactions.js';
-import { esc, $ } from '../util.js';
-
-let mode = 'club'; // 'club' | 'mine'
+import { esc, $, toast } from '../util.js';
 
 // 테마 선택은 보는 사람 브라우저에만 기억
 const THEME_KEY = 'librarian-cat-village-theme';
@@ -13,26 +13,24 @@ let theme = (() => { try { return localStorage.getItem(THEME_KEY); } catch { ret
 if (!THEMES[theme]) theme = 'village';
 
 export async function renderVillage(root) {
-  const [books, progress] = await Promise.all([api.listBooks(), api.listAllProgress()]);
+  const [books, progress, users] = await Promise.all([api.listBooks(), api.listAllProgress(), api.listButlers()]);
   const uid = api.me().uid;
   const byId = Object.fromEntries(books.map((b) => [b.id, b]));
-  const relevant = progress.filter((p) => byId[p.bookId] && (mode === 'club' || p.uid === uid));
-  const myPct = Object.fromEntries(progress.filter((p) => p.uid === uid).map((p) => [p.bookId, p.percent]));
+  const liveProgress = progress.filter((p) => byId[p.bookId]);
+  const myPct = Object.fromEntries(liveProgress.filter((p) => p.uid === uid).map((p) => [p.bookId, p.percent]));
 
-  // 책 하나당 고양이 한 마리. 북클럽 마을에서는 가장 많이 읽은 사람의 진도를 따름
-  const best = {};
-  const finishers = {};
-  for (const p of relevant) {
-    best[p.bookId] = Math.max(best[p.bookId] || 0, p.percent);
-    if (p.percent >= 100) (finishers[p.bookId] ||= []).push(p.name);
-  }
-  const residents = Object.entries(best)
-    .filter(([, pct]) => pct >= 50)
-    .map(([bookId, percent]) => {
-      const b = byId[bookId];
-      const name = b.cat?.name || '고양이';
-      return { bookId, percent, cat: b.cat, name, title: b.title, label: `${name} · ${b.title}`, finishers: finishers[bookId] || [] };
-    });
+  // 집사 목록: 등록된 집사 + (집사 문서가 없는) 진도 기록자
+  const butlers = new Map(users.map((u) => [u.uid, { uid: u.uid, name: u.name, look: u.look || randomLook(hash(u.uid)) }]));
+  for (const p of liveProgress) if (!butlers.has(p.uid)) butlers.set(p.uid, { uid: p.uid, name: p.name, look: randomLook(hash(p.uid)) });
+  for (const b of butlers.values()) b.isMe = b.uid === uid;
+
+  const residents = books.map((b) => ({ b, st: bookStatus(b.id, liveProgress) }))
+    .filter(({ st }) => st.best >= 50)
+    .map(({ b, st }) => ({
+      bookId: b.id, cat: b.cat, percent: st.best, title: b.title,
+      name: b.cat?.name || '고양이', label: `${b.cat?.name || '고양이'} · ${b.title}`,
+      ownerUid: st.owner.uid, ownerName: butlers.get(st.owner.uid)?.name || st.owner.name, tiedCount: st.tied.length,
+    }));
   const adults = residents.filter((r) => r.percent >= 100);
   const kittens = residents.filter((r) => r.percent < 100);
   const next = unlocksFor(theme).find((u) => u.at > adults.length);
@@ -41,24 +39,22 @@ export async function renderVillage(root) {
     <section class="page-head">
       <div>
         <h1>고양이 마을</h1>
-        <p class="muted">책을 50% 읽으면 아기 고양이가, 다 읽으면 왕관 쓴 고양이가 이사와요. 고양이를 눌러 놀아 주세요!</p>
+        <p class="muted">책을 50% 읽으면 아기 고양이가, 다 읽으면 왕관 쓴 고양이가 이사와요. 고양이는 자기 책을 가장 많이 읽은 집사를 따라다녀요.</p>
       </div>
-      <div class="seg">
-        <button class="${mode === 'club' ? 'active' : ''}" data-mode="club">북클럽 마을</button>
-        <button class="${mode === 'mine' ? 'active' : ''}" data-mode="mine">내 마을</button>
-      </div>
+      <button class="btn" id="my-butler">🧑 내 집사</button>
     </section>
     <div class="theme-picker" role="group" aria-label="마을 테마">
       ${Object.entries(THEMES).map(([id, t]) => `<button class="${id === theme ? 'active' : ''}" data-theme="${id}">${t.label}</button>`).join('')}
     </div>
     <div class="village-stats">
+      <div class="stat"><b>${butlers.size}</b><span>집사</span></div>
       <div class="stat"><b>${adults.length}</b><span>완독 고양이</span></div>
       <div class="stat"><b>${kittens.length}</b><span>아기 고양이</span></div>
       <div class="stat wide"><span>${next ? `🔓 ${next.at - adults.length}권 더 완독하면 <b>${next.label}</b>이(가) 생겨요` : '🏆 모든 건물을 해금했어요!'}</span></div>
     </div>
     <div class="village-wrap theme-${theme} ${isNight() ? 'night' : ''}">
       <canvas id="village"></canvas>
-      ${residents.length ? '' : '<div class="village-empty">아직 마을이 조용해요… 책을 절반 넘게 읽으면 첫 고양이가 찾아와요 🐾</div>'}
+      ${residents.length ? '' : '<div class="village-empty">아직 고양이가 없어요… 책을 절반 넘게 읽으면 첫 고양이가 찾아와요 🐾</div>'}
       <aside class="village-panel card" id="vpanel" hidden></aside>
     </div>
     <h2>마을 주민</h2>
@@ -66,60 +62,51 @@ export async function renderVillage(root) {
       <button class="resident" data-book="${r.bookId}">
         <div class="mini-cat">${catSVG(r.cat, { crown: r.percent >= 100 })}</div>
         <div><strong>${esc(r.name)}</strong><p class="tiny muted">${esc(r.title)}</p>
-        <p class="tiny">${r.percent >= 100 ? `👑 완독: ${esc(r.finishers.join(', '))}` : `🍼 아기 고양이 (${Math.round(r.percent)}%)`}</p></div>
+        <p class="tiny">${r.percent >= 100 ? '👑 완독 고양이' : `🍼 아기 고양이 (${Math.round(r.percent)}%)`} · 🧑 ${esc(r.ownerName)}</p></div>
       </button>`).join('')}</div>`;
 
-  const rerender = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
-  root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; rerender(); }));
   root.querySelectorAll('[data-theme]').forEach((b) => b.addEventListener('click', () => {
     theme = b.dataset.theme;
     try { localStorage.setItem(THEME_KEY, theme); } catch { /* 저장 불가해도 이번 화면에는 적용 */ }
-    rerender();
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
   }));
 
   const panel = $('#vpanel', root);
   const notesCache = {};
-  let current = null;
+  let current = null; // 열린 고양이 (resident)
   let busy = false;
 
-  const village = createVillage($('#village', root), residents, {
+  const village = createVillage($('#village', root), {
+    butlers: [...butlers.values()],
+    residents,
     theme,
     finishedCount: adults.length,
-    onCatClick: (c) => (c ? openPanel(c) : closePanel()),
+    onSelect: (e) => (!e ? closePanel() : e.kind === 'cat' ? openCat(residents.find((r) => r.bookId === e.bookId)) : openButler(e.uid)),
   });
 
-  function portrait(r, mood) {
-    return catSVG(r.cat, { mood, crown: r.percent >= 100 });
-  }
+  // ---------- 고양이 패널 ----------
+  const portrait = (r, mood) => catSVG(r.cat, { mood, crown: r.percent >= 100 });
 
-  function openPanel(r) {
+  function openCat(r) {
     current = r;
     busy = false;
-    village.select(r.bookId);
+    village.select('cat', r.bookId);
     const pct = myPct[r.bookId] || 0;
     const opened = INTERACTIONS.filter((it) => pct >= it.at).length;
     panel.innerHTML = `
       <button class="btn small ghost vp-close" aria-label="닫기">✕</button>
       <div class="vp-head">
-        <div class="vp-cat cat" id="vp-cat">${portrait(r, pct < 25 ? 'sleepy' : 'normal')}</div>
+        <div class="vp-cat cat" id="vp-cat">${portrait(r, 'normal')}</div>
         <div>
           <strong>${esc(r.name)}</strong>
           <p class="tiny muted">${esc(r.title)}</p>
-          <p class="tiny">내 진도 ${Math.round(pct)}%</p>
+          <p class="tiny">🧑 ${esc(r.ownerName)} 집사를 따라다녀요${r.tiedCount > 1 ? ` <span class="muted">(동점 ${r.tiedCount}명 중 오늘의 집사)</span>` : ''}</p>
         </div>
       </div>
-      <p class="tiny muted">${opened
-        ? `${opened}가지 놀이가 열려 있어요.`
-        : '이 책을 25% 읽으면 쓰다듬어 줄 수 있어요.'}</p>
+      <p class="tiny muted">내 진도 ${Math.round(pct)}% · ${opened ? `${opened}가지 놀이가 열려 있어요.` : '이 책을 25% 읽으면 쓰다듬어 줄 수 있어요.'}</p>
       <div class="interactions">${interactionButtons(pct)}</div>
       <a class="btn small" href="#/book/${r.bookId}">📖 책 페이지로 가기</a>`;
     panel.hidden = false;
-  }
-
-  function closePanel() {
-    current = null;
-    village.select(null);
-    panel.hidden = true;
   }
 
   async function interact(it) {
@@ -145,17 +132,88 @@ export async function renderVillage(root) {
     }, REACTION_MS);
   }
 
+  // ---------- 집사 패널 ----------
+  function openButler(buid) {
+    current = null;
+    const b = butlers.get(buid);
+    if (!b) return;
+    village.select('butler', buid);
+    const following = residents.filter((r) => r.ownerUid === buid);
+    const finished = liveProgress.filter((p) => p.uid === buid && p.percent >= 100).length;
+    panel.innerHTML = `
+      <button class="btn small ghost vp-close" aria-label="닫기">✕</button>
+      <div class="vp-head">
+        <div class="vp-cat vp-butler" id="vp-butler">${butlerSVG(b.look)}</div>
+        <div>
+          <strong>${esc(b.name)}${b.isMe ? ' (나)' : ''}</strong>
+          <p class="tiny">📚 완독 ${finished}권 · 🐾 고양이 ${following.length}마리</p>
+        </div>
+      </div>
+      ${following.length
+        ? `<div class="vp-following">${following.map((r) => `<button class="vp-mini" data-book="${r.bookId}" title="${esc(r.label)}">${catSVG(r.cat, { crown: r.percent >= 100 })}<span>${esc(r.name)}</span></button>`).join('')}</div>`
+        : '<p class="tiny muted">아직 따라다니는 고양이가 없어요. 책을 가장 많이 읽으면 고양이가 따라와요!</p>'}
+      ${b.isMe ? butlerEditor(b) : ''}`;
+    panel.hidden = false;
+    if (b.isMe) bindEditor(b);
+  }
+
+  const swatches = (name, items, cur, render) => `<div class="swatches">${items.map((it) => `
+    <label class="swatch" title="${esc(it.label)}"><input type="radio" name="${name}" value="${it.id}" ${it.id === cur ? 'checked' : ''}>${render(it)}</label>`).join('')}</div>`;
+  const dot = (it) => `<span class="dot" style="background:${it.color}"></span>`;
+
+  function butlerEditor(b) {
+    return `<form id="butler-form" class="butler-form">
+      <label>집사 이름<input name="name" value="${esc(b.name)}" maxlength="20" required></label>
+      <fieldset><legend>피부</legend>${swatches('skin', SKINS, b.look.skin, dot)}</fieldset>
+      <fieldset><legend>머리색</legend>${swatches('hairColor', HAIR_COLORS, b.look.hairColor, dot)}</fieldset>
+      <fieldset><legend>머리 모양</legend>${swatches('hairStyle', HAIR_STYLES, b.look.hairStyle, (it) => `<span class="chip">${it.label}</span>`)}</fieldset>
+      <fieldset><legend>옷</legend>${swatches('outfit', OUTFITS, b.look.outfit, dot)}</fieldset>
+      <button class="btn primary small">저장</button>
+    </form>`;
+  }
+
+  function bindEditor(b) {
+    const form = $('#butler-form', panel);
+    const read = () => {
+      const fd = new FormData(form);
+      return { name: fd.get('name').trim(), look: Object.fromEntries(['skin', 'hairColor', 'hairStyle', 'outfit'].map((k) => [k, fd.get(k)])) };
+    };
+    form.addEventListener('input', () => { $('#vp-butler', panel).innerHTML = butlerSVG(read().look); });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = read();
+      if (!data.name) return;
+      await api.ensureButler(b.look); // 집사 문서가 아직 없을 때를 대비
+      await api.updateButler(data);
+      toast('집사를 꾸몄어요!');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+  }
+
+  function closePanel() {
+    current = null;
+    village.select(null);
+    panel.hidden = true;
+  }
+
   panel.addEventListener('click', (e) => {
     if (e.target.closest('.vp-close')) return closePanel();
+    const mini = e.target.closest('.vp-mini');
+    if (mini) return openCat(residents.find((r) => r.bookId === mini.dataset.book));
     const btn = e.target.closest('[data-id]');
     if (btn) interact(INTERACTIONS.find((it) => it.id === btn.dataset.id));
+  });
+
+  $('#my-butler', root).addEventListener('click', () => {
+    openButler(uid);
+    root.querySelector('.village-wrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 
   // 주민 목록에서 고르면 마을에서 해당 고양이 선택
   root.querySelector('.resident-list').addEventListener('click', (e) => {
     const item = e.target.closest('[data-book]');
     if (!item) return;
-    openPanel(residents.find((r) => r.bookId === item.dataset.book));
+    openCat(residents.find((r) => r.bookId === item.dataset.book));
     root.querySelector('.village-wrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 

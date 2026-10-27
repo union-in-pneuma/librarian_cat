@@ -1,5 +1,6 @@
 import { api } from '../backend.js';
 import { catSVG } from '../cat.js';
+import { bookStatus } from '../owners.js';
 import { esc, $, stageOf, progressBar } from '../util.js';
 
 export async function renderLibrary(root) {
@@ -30,7 +31,8 @@ export async function renderLibrary(root) {
     }
     grid.innerHTML = list.map((b) => {
       const pct = mine[b.id] || 0;
-      const stage = stageOf(pct);
+      const { best, owner } = bookStatus(b.id, progress);
+      const stage = stageOf(best);
       return `<a class="book-card" href="#/book/${b.id}">
         <div class="card-cat">${catSVG(b.cat, { mood: stage === 0 ? 'sleepy' : 'normal', crown: stage === 4 })}</div>
         <div class="card-body">
@@ -38,7 +40,7 @@ export async function renderLibrary(root) {
           <p class="muted">${esc(b.author || '저자 미상')}${b.year ? ` · ${esc(b.year)}` : ''}</p>
           <p class="cat-name">🐾 ${esc(b.cat?.name || '이름 없는 고양이')}</p>
           ${progressBar(pct)}
-          <p class="tiny muted">내 진도 ${Math.round(pct)}% · ${readers[b.id] || 0}명 읽는 중</p>
+          <p class="tiny muted">내 진도 ${Math.round(pct)}% · ${readers[b.id] || 0}명 읽는 중${owner ? ` · 🧑 ${esc(owner.name)}` : ''}</p>
         </div></a>`;
     }).join('');
   };

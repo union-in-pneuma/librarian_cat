@@ -97,6 +97,18 @@ export const api = {
   signOut: store.signOut,
   me,
 
+  // 집사: 사용자마다 하나 (문서 id = uid)
+  async ensureButler(look) {
+    const u = me();
+    const existing = await store.get('users', u.uid);
+    if (existing) return existing;
+    const butler = { uid: u.uid, name: u.name, photo: u.photo, look, createdAt: Date.now() };
+    await store.set('users', u.uid, butler);
+    return { id: u.uid, ...butler };
+  },
+  listButlers: () => store.list('users'),
+  updateButler: (data) => store.update('users', me().uid, { ...data, updatedAt: Date.now() }),
+
   // 책
   listBooks: async () => (await store.list('books')).sort(byCreated).reverse(),
   getBook: (id) => store.get('books', id),

@@ -1,5 +1,6 @@
 import { api, DEMO_MODE } from './backend.js';
 import { catSVG } from './cat.js';
+import { randomLook } from './butler.js';
 import { $, esc, avatar, toast } from './util.js';
 import { renderLibrary } from './views/library.js';
 import { renderBookForm } from './views/bookForm.js';
@@ -69,7 +70,13 @@ function renderLogin() {
 
 if (DEMO_MODE) document.body.classList.add('demo');
 window.addEventListener('hashchange', route);
-api.onAuth((user) => {
+api.onAuth(async (user) => {
   renderHeader(user);
+  if (user) {
+    try {
+      const butler = await api.ensureButler(randomLook());
+      if (!butler.updatedAt && butler.createdAt > Date.now() - 5000) toast(`🧑 ${butler.name} 집사가 마을에 왔어요!`);
+    } catch (err) { console.error('집사 생성 실패', err); }
+  }
   route();
 });
