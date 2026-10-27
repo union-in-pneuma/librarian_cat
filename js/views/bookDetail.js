@@ -1,5 +1,5 @@
 import { api } from '../backend.js';
-import { catSVG } from '../cat.js';
+import { CatActor } from '../catMotion.js';
 import { bookStatus } from '../owners.js';
 import { INTERACTIONS, REACTION_MS, lineDuration, interactionButtons, talkLine, randomLine } from '../interactions.js';
 import { esc, safeUrl, $, $$, fmtDate, toast, avatar, progressBar, stageOf } from '../util.js';
@@ -31,7 +31,7 @@ export async function renderBookDetail(root, bookId) {
       <div class="card cat-stage-card">
         <div class="cat-stage" id="stage">
           <div class="bubble" id="bubble" hidden></div>
-          <div class="cat" id="cat"></div>
+          <canvas class="cat" id="cat" aria-label="고양이 (누르면 쓰다듬기)"></canvas>
           <div class="fx" id="fx"></div>
         </div>
         <p class="cat-title">🐾 ${esc(book.cat?.name || '이름 없는 고양이')}</p>
@@ -81,7 +81,32 @@ export async function renderBookDetail(root, bookId) {
   let busy = false;
   const status = () => bookStatus(bookId, progress);
   const baseMood = () => (stageOf(status().best) === 0 ? 'sleepy' : 'normal');
-  const drawCat = (mood = baseMood()) => { catEl.innerHTML = catSVG(book.cat, { mood, crown: status().best >= 100 }); };
+  const actor = new CatActor(book.cat, { crown: status().best >= 100, baseMood: baseMood(), res: Math.round(200 * (window.devicePixelRatio || 1)) * 1.2 });
+  // 진도가 바뀌면 왕관·기본 표정만 갱신 (동작은 이어서)
+  const drawCat = () => { actor.crown = status().best >= 100; actor.baseMood = baseMood(); };
+
+  // 고양이 무대: 캔버스에 CatActor를 매 프레임 그림
+  const ctx = catEl.getContext('2d');
+  let raf = 0;
+  let last = performance.now();
+  const fitCanvas = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const { width, height } = catEl.getBoundingClientRect();
+    catEl.width = width * dpr;
+    catEl.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  const frame = (t) => {
+    actor.update(Math.min(100, t - last));
+    last = t;
+    const { width, height } = catEl.getBoundingClientRect();
+    ctx.clearRect(0, 0, width, height);
+    actor.draw(ctx, width / 2, height - 6, Math.min(width, height - 70));
+    raf = requestAnimationFrame(frame);
+  };
+  fitCanvas();
+  window.addEventListener('resize', fitCanvas);
+  raf = requestAnimationFrame(frame);
 
   function say(text, ms = 2200) {
     bubble.textContent = text;
@@ -93,8 +118,7 @@ export async function renderBookDetail(root, bookId) {
   function interact(it) {
     if (busy) return;
     busy = true;
-    drawCat(it.mood);
-    catEl.className = `cat anim-${it.anim}`;
+    actor.react(it.id, REACTION_MS);
     const fx = $('#fx', root);
     for (let k = 0; k < 5; k++) {
       const s = document.createElement('span');
@@ -105,7 +129,7 @@ export async function renderBookDetail(root, bookId) {
       setTimeout(() => s.remove(), 1800);
     }
     say(it.id === 'talk' ? talkLine(notes, book.title) : randomLine(it), lineDuration(it));
-    setTimeout(() => { drawCat(); catEl.className = 'cat'; busy = false; }, REACTION_MS);
+    setTimeout(() => { busy = false; }, REACTION_MS);
   }
 
   function drawInteractions() {
@@ -276,4 +300,9 @@ export async function renderBookDetail(root, bookId) {
   drawInteractions();
   drawReaders();
   drawNotes();
+
+  return () => {
+    cancelAnimationFrame(raf);
+    window.removeEventListener('resize', fitCanvas);
+  };
 }

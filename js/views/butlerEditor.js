@@ -1,17 +1,13 @@
 // 집사 꾸미기 창 (모달)
 import { api } from '../backend.js';
-import { butlerSVG, randomLook, SKINS, HAIR_COLORS, HAIR_STYLES, OUTFITS } from '../butler.js';
+import { butlerSVG, randomLook, DEFAULT_LOOK, BUTLER_PARTS } from '../butler.js';
 import { esc, $, toast } from '../util.js';
-
-const swatches = (name, items, cur, render) => `<div class="swatches">${items.map((it) => `
-  <label class="swatch" title="${esc(it.label)}"><input type="radio" name="${name}" value="${it.id}" ${it.id === cur ? 'checked' : ''}>${render(it)}</label>`).join('')}</div>`;
-const dot = (it) => `<span class="dot" style="background:${it.color}"></span><small>${esc(it.label)}</small>`;
-const chip = (it) => `<span class="chip">${esc(it.label)}</span>`;
+import { partsEditorHTML, bindPartsTabs, readParts, writeParts } from './partsEditor.js';
 
 /** 내 집사 꾸미기 창을 엽니다. 저장하면 onSaved() 호출 */
 export async function openButlerEditor({ onSaved } = {}) {
   const butler = await api.ensureButler(randomLook());
-  const look = { ...randomLook(), ...butler.look };
+  const look = { ...DEFAULT_LOOK, ...butler.look };
 
   const dialog = document.createElement('dialog');
   dialog.className = 'modal';
@@ -26,10 +22,7 @@ export async function openButlerEditor({ onSaved } = {}) {
           <button type="button" class="btn small" id="be-random">🎲 랜덤</button></div>
         <div class="butler-options">
           <label>집사 이름<input name="name" value="${esc(butler.name)}" maxlength="20" required autofocus></label>
-          <fieldset><legend>피부</legend>${swatches('skin', SKINS, look.skin, dot)}</fieldset>
-          <fieldset><legend>머리색</legend>${swatches('hairColor', HAIR_COLORS, look.hairColor, dot)}</fieldset>
-          <fieldset><legend>머리 모양</legend>${swatches('hairStyle', HAIR_STYLES, look.hairStyle, chip)}</fieldset>
-          <fieldset><legend>옷</legend>${swatches('outfit', OUTFITS, look.outfit, dot)}</fieldset>
+          <div class="parts-editor">${partsEditorHTML(BUTLER_PARTS, look)}</div>
         </div>
       </div>
       <footer class="form-actions">
@@ -40,15 +33,12 @@ export async function openButlerEditor({ onSaved } = {}) {
   document.body.append(dialog);
 
   const form = $('form', dialog);
-  const read = () => {
-    const fd = new FormData(form);
-    return { name: fd.get('name').trim(), look: Object.fromEntries(['skin', 'hairColor', 'hairStyle', 'outfit'].map((k) => [k, fd.get(k)])) };
-  };
+  const read = () => ({ name: form.elements.name.value.trim(), look: readParts(form, BUTLER_PARTS) });
   const preview = () => { $('#be-preview', dialog).innerHTML = butlerSVG(read().look); };
   form.addEventListener('input', preview);
+  bindPartsTabs($('.parts-editor', dialog));
   $('#be-random', dialog).addEventListener('click', () => {
-    const r = randomLook();
-    for (const [k, v] of Object.entries(r)) form.querySelector(`[name=${k}][value=${v}]`).checked = true;
+    writeParts(form, BUTLER_PARTS, randomLook());
     preview();
   });
 

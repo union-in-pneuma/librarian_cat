@@ -140,6 +140,7 @@ legend { font-size: .92rem; margin-bottom: 6px; }
   background: radial-gradient(ellipse at 50% 92%, #EBD6B8 0 30%, transparent 31%), linear-gradient(#FFF1DE, #FBE3C8);
   border-radius: 12px; overflow: hidden; }
 .cat { cursor: pointer; width: 220px; height: 220px; transform-origin: 50% 90%; }
+canvas.cat { width: 100%; height: 100%; display: block; }
 .cat svg { width: 100%; height: 100%; }
 .cat-title { text-align: center; font-family: 'Jua', sans-serif; font-size: 1.2rem; margin: 10px 0 0; }
 .bubble {
@@ -275,7 +276,7 @@ legend { font-size: .92rem; margin-bottom: 6px; }
 
 /* ---------- 모달 / 집사 꾸미기 ---------- */
 .modal {
-  border: 0; border-radius: var(--radius); padding: 0; width: min(640px, calc(100vw - 32px));
+  border: 0; border-radius: var(--radius); padding: 0; width: min(720px, calc(100vw - 32px));
   background: var(--card); color: var(--ink); box-shadow: 0 20px 60px rgba(60, 40, 30, .3);
 }
 .modal::backdrop { background: rgba(60, 40, 30, .35); backdrop-filter: blur(2px); }
@@ -294,3 +295,12 @@ legend { font-size: .92rem; margin-bottom: 6px; }
   .butler-editor-body { grid-template-columns: 1fr; }
   .butler-preview #be-preview svg { width: 90px; height: 126px; }
 }
+
+/* ---------- 꾸미기 탭 ---------- */
+.parts-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 4px 0 12px; }
+.parts-tab { border: 0; background: none; padding: 6px 12px; font: inherit; font-family: 'Jua', sans-serif; cursor: pointer;
+  color: var(--muted); border-bottom: 3px solid transparent; }
+.parts-tab.active { color: var(--ink); border-color: var(--accent); }
+.parts-group { min-height: 220px; }
+.parts-group .swatch .dot { width: 26px; height: 26px; }
+.butler-options .parts-group { min-height: 300px; }

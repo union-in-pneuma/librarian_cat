@@ -1,7 +1,7 @@
 // 2.5D 아이소메트릭 고양이 마을 (Canvas 2D)
 // 집사들은 마을을 돌아다니고, 고양이는 자기 책을 가장 많이 읽은 집사의 발자취를 따라다닙니다.
 // 아직 읽은 집사가 없는 고양이는 혼자 자유롭게 돌아다닙니다.
-import { catImage } from './cat.js';
+import { CatActor } from './catMotion.js';
 import { butlerImage } from './butler.js';
 import { REACTION_MS } from './interactions.js';
 import { TW, TH, iso, lift, lerp, poly } from './iso.js';
@@ -50,13 +50,12 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
     const owner = byUid[r.ownerUid] || null;
     const order = owner ? (followCount[r.ownerUid] = (followCount[r.ownerUid] ?? -1) + 1) : 0;
     const crown = r.percent >= 100;
-    const img = catImage(r.cat, { crown, mood: 'normal' });
     const [si, sj] = owner ? [owner.i + 0.3 * (order + 1), owner.j + 0.2] : randTile().map((v) => v + 0.5);
     return {
-      ...r, kind: 'cat', owner, order, crown, img, baseImg: img, w: 42, h: 42,
-      i: si, j: sj, tx: si, ty: sj, wait: Math.random() * 3000, flip: false, phase: Math.random() * 6, moving: false,
+      ...r, kind: 'cat', owner, order, actor: new CatActor(r.cat, { crown }), w: 42, h: 42,
+      i: si, j: sj, tx: si, ty: sj, wait: Math.random() * 3000, flip: Math.random() < 0.5, moving: false, speed: 0,
       offset: { i: ((order % 3) - 1) * 0.18, j: (order % 2 ? 0.15 : -0.15) },
-      fx: [], anim: null, bubble: null, timer: 0, pauseUntil: 0,
+      fx: [], bubble: null, pauseUntil: 0,
     };
   });
   const entities = [...people, ...cats];
@@ -130,6 +129,7 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
     stepToward(c, c.tx, c.ty, 0.6, dt);
     if (!walkable(Math.floor(c.i), Math.floor(c.j))) { c.i = pi; c.j = pj; c.tx = pi; c.ty = pj; return; }
     c.moving = true;
+    c.speed = 0.6;
   }
 
   function updateCat(c, dt, now) {
@@ -143,13 +143,18 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
     const dist = Math.hypot(tx - c.i, ty - c.j);
     if (dist < 0.08) return;
     c.moving = true;
-    stepToward(c, tx, ty, Math.max(1, dist * 1.8), dt);
+    c.speed = Math.max(1, dist * 1.8);
+    stepToward(c, tx, ty, c.speed, dt);
   }
 
   function update(dt) {
     const now = performance.now();
     people.forEach((b) => updateButler(b, dt));
-    cats.forEach((c) => updateCat(c, dt, now));
+    cats.forEach((c) => {
+      updateCat(c, dt, now);
+      c.actor.setMotion(c.moving, c.speed);
+      c.actor.update(dt);
+    });
   }
 
   // ---------- 그리기 ----------
@@ -192,21 +197,8 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
 
   function bounds(e, t) {
     const p = iso(e.i, e.j);
-    const bob = e.moving ? Math.abs(Math.sin(t / 160 + e.phase)) * 3 : 0;
+    const bob = e.kind === 'butler' && e.moving ? Math.abs(Math.sin(t / 160 + e.phase)) * 3 : 0; // 고양이는 CatActor가 직접 움직임
     return { x: p.x - e.w / 2, y: p.y - e.h - bob + 4, w: e.w, h: e.h };
-  }
-
-  // 상호작용 중 애니메이션: 화면 오프셋/회전/세로 스케일
-  function animPose(e, t) {
-    if (!e.anim) return { oy: 0, rot: 0, sy: 1 };
-    const s = (t - e.anim.t0) / 1000;
-    switch (e.anim.type) {
-      case 'jump': return { oy: -Math.abs(Math.sin((s * Math.PI) / 0.55)) * e.h * 0.5, rot: 0, sy: 1 };
-      case 'purr': return { oy: 0, rot: Math.sin(s * 25) * 0.05, sy: 1 };
-      case 'eat': return { oy: 0, rot: 0, sy: 1 - Math.abs(Math.sin(s * 10)) * 0.07 };
-      case 'nod': return { oy: 0, rot: Math.sin(s * 12) * 0.07, sy: 1 };
-      default: return { oy: 0, rot: 0, sy: 1 };
-    }
   }
 
   function drawEntity(e, t) {
@@ -225,12 +217,14 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
     ctx.beginPath();
     ctx.ellipse(p.x, p.y, e.w * 0.32, e.w * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
-    if (!e.img.complete) return;
-    const { oy, rot, sy } = animPose(e, t);
+    if (e.kind === 'cat') {
+      e.actor.draw(ctx, p.x, p.y + 2, e.w, e.flip);
+      return;
+    }
+    if (!e.img.complete || !e.img.naturalWidth) return; // 로딩 중이거나 깨진 이미지
     ctx.save();
-    ctx.translate(p.x, p.y + oy);
-    ctx.rotate(rot);
-    ctx.scale(e.flip ? -1 : 1, sy);
+    ctx.translate(p.x, p.y);
+    ctx.scale(e.flip ? -1 : 1, 1);
     ctx.drawImage(e.img, -b.w / 2, b.y - p.y, b.w, b.h);
     ctx.restore();
   }
@@ -251,7 +245,7 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
   function drawOverlay(e, t) {
     const b = bounds(e, t);
     const p = iso(e.i, e.j);
-    const top = b.y + animPose(e, t).oy;
+    const top = b.y;
 
     if (e.kind === 'butler') {
       nameTag(e.isMe ? `${e.name} (나)` : e.name, p.x, top - 2, e.isMe);
@@ -366,22 +360,18 @@ export function createVillage(canvas, { butlers, residents, theme: themeId = 'vi
       selected = c;
     },
 
-    /** 상호작용: 멈춰 서서 표정·동작·이펙트·말풍선으로 반응 */
+    /** 상호작용: 멈춰 서서 CatActor 반응 동작 + 이펙트·말풍선 */
     react(bookId, it, text, ms) {
       const c = catOf(bookId);
       if (!c) return;
       const now = performance.now();
       c.pauseUntil = now + ms;
-      c.img = catImage(c.cat, { crown: c.crown, mood: it.mood });
-      c.anim = { type: it.anim, t0: now };
+      c.actor.react(it.id, REACTION_MS);
       c.bubble = { text, until: now + ms };
       for (let k = 0; k < 5; k++) c.fx.push({ ch: it.fx, t0: now + k * 120, dx: (Math.random() - 0.5) * c.w });
-      clearTimeout(c.timer);
-      c.timer = setTimeout(() => { c.img = c.baseImg; c.anim = null; }, REACTION_MS);
     },
 
     destroy() {
-      cats.forEach((c) => clearTimeout(c.timer));
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
       canvas.removeEventListener('mousemove', onMove);
