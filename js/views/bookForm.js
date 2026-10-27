@@ -1,6 +1,7 @@
 import { api } from '../backend.js';
 import { catSVG, randomCat, DEFAULT_CAT, FUR_COLORS, PATTERNS, EYE_COLORS, ACCESSORIES } from '../cat.js';
-import { esc, $, $$, toast } from '../util.js';
+import { esc, safeUrl, $, $$, toast } from '../util.js';
+import { searchBooks, SEARCH_SOURCE } from '../bookSearch.js';
 
 const FIELDS = [
   ['title', '제목 *', 'text'],
@@ -31,7 +32,7 @@ export async function renderBookForm(root, bookId) {
     <section class="page-head"><h1>${book ? '책 정보 수정' : '새 책과 고양이 데려오기'}</h1></section>
     ${book ? '' : `
     <div class="card lookup">
-      <label>책 검색으로 자동 채우기 <span class="muted tiny">(Google Books)</span></label>
+      <label>책 검색으로 자동 채우기 <span class="muted tiny">(${SEARCH_SOURCE})</span></label>
       <div class="row"><input id="q" placeholder="제목 또는 ISBN"><button class="btn" id="lookup" type="button">검색</button></div>
       <div id="results" class="lookup-results"></div>
     </div>`}
@@ -113,15 +114,18 @@ function setupLookup(root, form, preview) {
     if (!q.value.trim()) return;
     results.innerHTML = '<p class="muted">검색 중…</p>';
     try {
-      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?maxResults=6&q=${encodeURIComponent(q.value.trim())}`);
-      items = (await res.json()).items || [];
-    } catch { items = []; }
+      items = await searchBooks(q.value.trim());
+    } catch (err) {
+      items = [];
+      results.innerHTML = `<p class="muted">${esc(err.message)}</p>`;
+      return;
+    }
     results.innerHTML = items.length
-      ? items.map((it, k) => {
-        const v = it.volumeInfo;
-        return `<button type="button" class="lookup-item" data-k="${k}">
-          <strong>${esc(v.title)}</strong> <span class="muted">${esc((v.authors || []).join(', '))} · ${esc(v.publisher || '')} ${esc((v.publishedDate || '').slice(0, 4))}</span></button>`;
-      }).join('')
+      ? items.map((it, k) => `
+        <button type="button" class="lookup-item" data-k="${k}">
+          ${safeUrl(it.thumbnail) ? `<img src="${safeUrl(it.thumbnail)}" alt="" loading="lazy">` : '<span class="lookup-noimg">📕</span>'}
+          <span><strong>${esc(it.title)}</strong><br>
+          <span class="muted tiny">${esc(it.author)} · ${esc(it.publisher)} ${esc(it.year)}</span></span></button>`).join('')
       : '<p class="muted">결과가 없어요. 직접 입력해 주세요.</p>';
   };
 
@@ -130,18 +134,11 @@ function setupLookup(root, form, preview) {
   results.addEventListener('click', (e) => {
     const el = e.target.closest('.lookup-item');
     if (!el) return;
-    const v = items[el.dataset.k].volumeInfo;
-    const isbn = (v.industryIdentifiers || []).find((x) => x.type === 'ISBN_13') || (v.industryIdentifiers || [])[0];
-    const set = (name, value) => { if (value) form.elements[name].value = value; };
-    set('title', v.title + (v.subtitle ? `: ${v.subtitle}` : ''));
-    set('author', (v.authors || []).join(', '));
-    set('publisher', v.publisher);
-    set('year', (v.publishedDate || '').slice(0, 4));
-    set('pages', v.pageCount);
-    set('isbn', isbn?.identifier);
-    set('coverUrl', (v.imageLinks?.thumbnail || '').replace(/^http:/, 'https:'));
-    set('description', v.description);
-    results.innerHTML = '<p class="muted">채웠어요! 내용을 확인하고 고양이를 꾸며 주세요.</p>';
+    const it = items[el.dataset.k];
+    for (const key of ['title', 'author', 'publisher', 'year', 'pages', 'isbn', 'coverUrl', 'description']) {
+      if (it[key]) form.elements[key].value = it[key];
+    }
+    results.innerHTML = '<p class="muted">채웠어요! 쪽수·소개를 확인하고 고양이를 꾸며 주세요.</p>';
     preview();
   });
 }
